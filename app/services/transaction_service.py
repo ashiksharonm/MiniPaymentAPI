@@ -12,6 +12,7 @@ from app.models.transaction import Transaction, TransactionStatus
 from app.schemas.transaction import TransactionCreate, TransactionStatus as SchemaTransactionStatus
 from app.services.user_service import get_user_or_raise, UserNotFoundError
 from app.core.fx_rates import convert_currency, is_currency_supported
+from app.core.redis_client import get_idempotent_transaction, set_idempotent_transaction
 
 
 class TransactionServiceError(Exception):
@@ -66,8 +67,15 @@ def create_transaction(db: Session, transaction_data: TransactionCreate) -> Tran
     # Validate user exists
     get_user_or_raise(db, transaction_data.user_id)
     
-    # Check idempotency key if provided (return existing transaction)
+    # Check idempotency key in Redis first for O(1) high-speed validation
     if transaction_data.idempotency_key:
+        cached_txn = get_idempotent_transaction(transaction_data.idempotency_key)
+        if cached_txn:
+            # Reconstruct dummy ORM object out of cached dict to satisfy router validation
+            txn = Transaction(**cached_txn)
+            return txn
+            
+        # Fallback to DB check (in case Redis crashed/evicted early)
         existing = get_transaction_by_idempotency_key(db, transaction_data.idempotency_key)
         if existing:
             return existing
@@ -106,6 +114,23 @@ def create_transaction(db: Session, transaction_data: TransactionCreate) -> Tran
         db.add(transaction)
         db.commit()
         db.refresh(transaction)
+        
+        # Async-ish write to Redis for future idempotency checks
+        if transaction_data.idempotency_key:
+            txn_dict = {
+                "id": str(transaction.id),
+                "user_id": str(transaction.user_id),
+                "amount": float(transaction.amount),
+                "source_currency": transaction.source_currency,
+                "target_currency": transaction.target_currency,
+                "fx_rate": float(transaction.fx_rate),
+                "converted_amount": float(transaction.converted_amount),
+                "status": transaction.status,
+                "idempotency_key": transaction.idempotency_key,
+                "created_at": transaction.created_at.isoformat()
+            }
+            set_idempotent_transaction(transaction_data.idempotency_key, txn_dict)
+            
         return transaction
     except IntegrityError:
         # Idempotency key race condition - fetch and return existing

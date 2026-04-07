@@ -237,7 +237,7 @@ class TestListUserTransactions:
             transaction_data = {
                 **sample_transaction_data, 
                 "user_id": user_id,
-                "idempotency_key": f"key-{i}"
+                "idempotency_key": f"{user_id}-key-{i}"
             }
             client.post("/transactions", json=transaction_data, headers=api_headers)
         
@@ -266,7 +266,7 @@ class TestListUserTransactions:
             transaction_data = {
                 **sample_transaction_data, 
                 "user_id": user_id,
-                "idempotency_key": f"key-{i}"
+                "idempotency_key": f"{user_id}-key-{i}"
             }
             client.post("/transactions", json=transaction_data, headers=api_headers)
         

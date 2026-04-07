@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str = "sqlite:///./mini_payments.db"
+    REDIS_URL: str = "redis://localhost:6379/0"
     
     # Authentication (simple API key for demo purposes)
     API_KEY: str = "demo-api-key-12345"

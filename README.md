@@ -34,6 +34,7 @@ This project demonstrates key backend engineering skills:
 | Framework | FastAPI |
 | Language | Python 3.10+ |
 | Database | SQLite (PostgreSQL-ready) |
+| Cache | Redis (for Idempotency) |
 | ORM | SQLAlchemy 2.0 |
 | Validation | Pydantic v2 |
 | Migrations | Alembic |
