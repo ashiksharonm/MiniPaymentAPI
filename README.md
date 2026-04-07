@@ -4,6 +4,18 @@ A **production-style** Mini Payments API demonstrating backend engineering funda
 
 > ⚠️ **Disclaimer**: This is NOT a real payment gateway. It does NOT process real payments and should NOT be used for actual financial transactions. Not compliant with PCI-DSS or any banking regulations.
 
+## 🌐 Live Demo
+
+| Resource | URL |
+|----------|-----|
+| 🚀 Live API (Swagger UI) | [https://mini-payments-api.onrender.com/docs](https://mini-payments-api.onrender.com/docs) |
+| 📖 ReDoc | [https://mini-payments-api.onrender.com/redoc](https://mini-payments-api.onrender.com/redoc) |
+| ❤️ Health Check | [https://mini-payments-api.onrender.com/health](https://mini-payments-api.onrender.com/health) |
+
+> **Note:** Free-tier Render instances spin down after inactivity. The first request may take ~30 seconds to wake up.
+>
+> **Demo API Key:** `demo-api-key-12345` (use in the `X-API-Key` header or via the Authorize button in Swagger UI)
+
 ## 🎯 Overview
 
 This project demonstrates key backend engineering skills:
@@ -61,6 +73,106 @@ mini-payments-api/
 └── README.md
 ```
 
+## 🏗️ System Architecture
+
+The diagram below is the full architecture in [Eraser.io](https://app.eraser.io) diagram code. Paste it at [app.eraser.io](https://app.eraser.io) to render the interactive diagram.
+
+```
+// Eraser.io Diagram Code
+// Paste at: https://app.eraser.io/
+
+title Mini Payments API — System Architecture
+
+// ─── Groups ───────────────────────────────────────────────
+group Client {
+  Client [icon: monitor, color: blue]
+}
+
+group API_Layer [label: "FastAPI Application (Render.com)"] {
+  CORS_Middleware [icon: shield, color: orange, label: "CORS Middleware"]
+  Auth_Middleware [icon: lock, color: red, label: "API Key Auth Middleware"]
+
+  group Routers [label: "Route Handlers"] {
+    Users_Router [icon: users, color: green, label: "/users router"]
+    Transactions_Router [icon: credit-card, color: purple, label: "/transactions router"]
+    Health_Router [icon: activity, color: gray, label: "/health router"]
+  }
+
+  group Services [label: "Business Logic Layer"] {
+    User_Service [icon: user, color: green, label: "UserService"]
+    Transaction_Service [icon: zap, color: purple, label: "TransactionService"]
+    FX_Engine [icon: refresh-cw, color: yellow, label: "FX Rate Engine (Static Rates)"]
+  }
+
+  group Data_Layer [label: "Data Layer — SQLAlchemy ORM"] {
+    User_Model [icon: table, color: green, label: "User Model"]
+    Transaction_Model [icon: table, color: purple, label: "Transaction Model"]
+  }
+}
+
+group Database [label: "Persistence"] {
+  SQLite [icon: database, color: gray, label: "SQLite DB (mini_payments.db)"]
+}
+
+group Schemas [label: "Pydantic Schemas (Validation)"] {
+  UserSchema [icon: file-text, color: green, label: "UserCreate / UserResponse"]
+  TransactionSchema [icon: file-text, color: purple, label: "TransactionCreate / TransactionResponse"]
+}
+
+// ─── Connections ────────────────────────────────────────────
+Client --> CORS_Middleware: HTTP Request
+CORS_Middleware --> Auth_Middleware
+Auth_Middleware --> Users_Router: Authenticated
+Auth_Middleware --> Transactions_Router: Authenticated
+Auth_Middleware --> Health_Router: No Auth Required
+
+Users_Router --> UserSchema: Validate Input
+Users_Router --> User_Service
+User_Service --> User_Model
+
+Transactions_Router --> TransactionSchema: Validate Input
+Transactions_Router --> Transaction_Service
+Transaction_Service --> FX_Engine: Convert Currency
+Transaction_Service --> Transaction_Model
+Transaction_Service --> User_Model: Check User Exists
+
+User_Model --> SQLite
+Transaction_Model --> SQLite
+
+Users_Router --> Client: JSON Response
+Transactions_Router --> Client: JSON Response (with FX converted amount)
+Health_Router --> Client: {status: healthy}
+```
+
+### Architecture Summary
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                     HTTP Client                          │
+└───────────────────────┬──────────────────────────────────┘
+                        │
+┌───────────────────────▼──────────────────────────────────┐
+│              FastAPI Application (Render.com)            │
+│                                                          │
+│  CORS Middleware → API Key Auth Middleware               │
+│       │                    │                            │
+│  /users router    /transactions router    /health        │
+│       │                    │                            │
+│  UserService       TransactionService                    │
+│       │              │         │                        │
+│       │         FX Engine   UserService                 │
+│       │              │                                  │
+│  ─────────── SQLAlchemy ORM ───────────                 │
+│       │                    │                            │
+│  User Model       Transaction Model                     │
+└───────┬────────────────────┬────────────────────────────┘
+        │                    │
+┌───────▼────────────────────▼────────────────────────────┐
+│               SQLite Database                           │
+│         (mini_payments.db)                              │
+└─────────────────────────────────────────────────────────┘
+```
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -72,7 +184,7 @@ mini-payments-api/
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/ashiksharonm/MiniPaymentAPI.git
    cd MiniPaymentsAPI
    ```
 
