@@ -15,6 +15,7 @@ from app.schemas.transaction import (
     TransactionListResponse,
 )
 from app.services.transaction_service import (
+    IdempotencyKeyReuseError,
     create_transaction,
     get_transaction_by_id,
     get_transactions_by_user,
@@ -62,6 +63,11 @@ def create_new_transaction(
     except UserNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except IdempotencyKeyReuseError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(e)
         )
     except (InvalidCurrencyError, FXConversionError) as e:
