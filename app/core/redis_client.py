@@ -40,16 +40,21 @@ def get_redis_client() -> redis.Redis:
     return _redis_client
 
 
-def get_idempotent_transaction(idempotency_key: str) -> Optional[dict]:
+def _cache_key(user_id: str, idempotency_key: str) -> str:
+    """Idempotency keys are scoped per user."""
+    return f"idempotency:{user_id}:{idempotency_key}"
+
+
+def get_idempotent_transaction(user_id: str, idempotency_key: str) -> Optional[dict]:
     """
-    Look up a transaction dict from Redis by idempotency_key in O(1) time.
+    Look up a transaction dict from Redis by (user_id, idempotency_key) in O(1) time.
     """
     client = get_redis_client()
     if client is None:
         return None  # Graceful fallback: Redis is down, we must hit Postgres/SQLite
     
     try:
-        cached_data = client.get(f"idempotency:{idempotency_key}")
+        cached_data = client.get(_cache_key(user_id, idempotency_key))
         if cached_data:
             return json.loads(cached_data)
     except Exception as e:
@@ -58,7 +63,7 @@ def get_idempotent_transaction(idempotency_key: str) -> Optional[dict]:
     return None
 
 
-def set_idempotent_transaction(idempotency_key: str, transaction_dict: dict) -> None:
+def set_idempotent_transaction(user_id: str, idempotency_key: str, transaction_dict: dict) -> None:
     """
     Store the complete transaction response dict in Redis, tied
     to the requested idempotency_key.
@@ -73,7 +78,7 @@ def set_idempotent_transaction(idempotency_key: str, transaction_dict: dict) -> 
         # We ensure json serialization can happen
         payload = json.dumps(transaction_dict)
         client.setex(
-            name=f"idempotency:{idempotency_key}",
+            name=_cache_key(user_id, idempotency_key),
             time=IDEMPOTENCY_TTL,
             value=payload
         )

@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from sqlalchemy import String, DateTime, Numeric, ForeignKey, Index
+from sqlalchemy import String, DateTime, Numeric, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -43,6 +43,10 @@ class Transaction(Base):
         created_at: Timestamp when the transaction was created
     """
     __tablename__ = "transactions"
+    __table_args__ = (
+        # Idempotency keys are scoped per user
+        UniqueConstraint("user_id", "idempotency_key", name="uq_transactions_user_idempotency_key"),
+    )
     
     # Primary key as UUID
     id: Mapped[str] = mapped_column(
@@ -63,9 +67,15 @@ class Transaction(Base):
     # Client should provide this, it's optional but recommended
     idempotency_key: Mapped[str | None] = mapped_column(
         String(64),
-        unique=True,
         nullable=True,
         index=True
+    )
+
+    # SHA-256 of the request payload that created this transaction; lets a
+    # replayed idempotency key be checked against the original request.
+    request_fingerprint: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True
     )
     
     # Amount fields using Decimal for precision

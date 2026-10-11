@@ -3,6 +3,9 @@ Transaction service layer.
 
 Contains all business logic for transaction operations including FX conversion.
 """
+import hashlib
+import json
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -40,6 +43,51 @@ class DuplicateIdempotencyKeyError(TransactionServiceError):
     pass
 
 
+class IdempotencyKeyReuseError(TransactionServiceError):
+    """Raised when an idempotency key is replayed with a different payload."""
+    pass
+
+
+def compute_request_fingerprint(transaction_data: TransactionCreate) -> str:
+    """Hash the semantically relevant request fields (not the key itself)."""
+    canonical = json.dumps(
+        {
+            "user_id": transaction_data.user_id,
+            "amount": format(transaction_data.amount.normalize(), "f"),
+            "source_currency": transaction_data.source_currency.upper(),
+            "target_currency": transaction_data.target_currency.upper(),
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _transaction_from_cache(cached: dict) -> Transaction:
+    """Rebuild a detached Transaction from a cached JSON dict (money as strings)."""
+    return Transaction(
+        id=cached["id"],
+        user_id=cached["user_id"],
+        idempotency_key=cached["idempotency_key"],
+        request_fingerprint=cached.get("request_fingerprint"),
+        amount=Decimal(cached["amount"]),
+        source_currency=cached["source_currency"],
+        target_currency=cached["target_currency"],
+        fx_rate=Decimal(cached["fx_rate"]),
+        converted_amount=Decimal(cached["converted_amount"]),
+        status=cached["status"],
+        created_at=datetime.fromisoformat(cached["created_at"]),
+    )
+
+
+def _replay_or_raise(existing: Transaction, fingerprint: str) -> Transaction:
+    """Return the original transaction if the payload matches, else raise."""
+    if existing.request_fingerprint is not None and existing.request_fingerprint != fingerprint:
+        raise IdempotencyKeyReuseError(
+            "Idempotency key was already used with a different request payload"
+        )
+    return existing
+
+
 class InvalidStatusTransitionError(TransactionServiceError):
     """Raised when an invalid status transition is attempted."""
     pass
@@ -67,19 +115,23 @@ def create_transaction(db: Session, transaction_data: TransactionCreate) -> Tran
     # Validate user exists
     get_user_or_raise(db, transaction_data.user_id)
     
-    # Check idempotency key in Redis first for O(1) high-speed validation
+    fingerprint = compute_request_fingerprint(transaction_data)
+
+    # Check idempotency key in Redis first (scoped per user)
     if transaction_data.idempotency_key:
-        cached_txn = get_idempotent_transaction(transaction_data.idempotency_key)
+        cached_txn = get_idempotent_transaction(
+            transaction_data.user_id, transaction_data.idempotency_key
+        )
         if cached_txn:
-            # Reconstruct dummy ORM object out of cached dict to satisfy router validation
-            txn = Transaction(**cached_txn)
-            return txn
-            
+            return _replay_or_raise(_transaction_from_cache(cached_txn), fingerprint)
+
         # Fallback to DB check (in case Redis crashed/evicted early)
-        existing = get_transaction_by_idempotency_key(db, transaction_data.idempotency_key)
+        existing = get_transaction_by_idempotency_key(
+            db, transaction_data.user_id, transaction_data.idempotency_key
+        )
         if existing:
-            return existing
-    
+            return _replay_or_raise(existing, fingerprint)
+
     # Validate currencies
     if not is_currency_supported(transaction_data.source_currency):
         raise InvalidCurrencyError(f"Source currency '{transaction_data.source_currency}' not supported")
@@ -102,6 +154,7 @@ def create_transaction(db: Session, transaction_data: TransactionCreate) -> Tran
     transaction = Transaction(
         user_id=transaction_data.user_id,
         idempotency_key=transaction_data.idempotency_key,
+        request_fingerprint=fingerprint,
         amount=transaction_data.amount,
         source_currency=transaction_data.source_currency.upper(),
         target_currency=transaction_data.target_currency.upper(),
@@ -120,25 +173,30 @@ def create_transaction(db: Session, transaction_data: TransactionCreate) -> Tran
             txn_dict = {
                 "id": str(transaction.id),
                 "user_id": str(transaction.user_id),
-                "amount": float(transaction.amount),
+                "amount": str(transaction.amount),
                 "source_currency": transaction.source_currency,
                 "target_currency": transaction.target_currency,
-                "fx_rate": float(transaction.fx_rate),
-                "converted_amount": float(transaction.converted_amount),
+                "fx_rate": str(transaction.fx_rate),
+                "converted_amount": str(transaction.converted_amount),
                 "status": transaction.status,
                 "idempotency_key": transaction.idempotency_key,
+                "request_fingerprint": fingerprint,
                 "created_at": transaction.created_at.isoformat()
             }
-            set_idempotent_transaction(transaction_data.idempotency_key, txn_dict)
+            set_idempotent_transaction(
+                transaction_data.user_id, transaction_data.idempotency_key, txn_dict
+            )
             
         return transaction
     except IntegrityError:
         # Idempotency key race condition - fetch and return existing
         db.rollback()
         if transaction_data.idempotency_key:
-            existing = get_transaction_by_idempotency_key(db, transaction_data.idempotency_key)
+            existing = get_transaction_by_idempotency_key(
+                db, transaction_data.user_id, transaction_data.idempotency_key
+            )
             if existing:
-                return existing
+                return _replay_or_raise(existing, fingerprint)
         raise DuplicateIdempotencyKeyError("Duplicate idempotency key")
 
 
@@ -156,18 +214,22 @@ def get_transaction_by_id(db: Session, transaction_id: str) -> Optional[Transact
     return db.query(Transaction).filter(Transaction.id == transaction_id).first()
 
 
-def get_transaction_by_idempotency_key(db: Session, idempotency_key: str) -> Optional[Transaction]:
+def get_transaction_by_idempotency_key(
+    db: Session, user_id: str, idempotency_key: str
+) -> Optional[Transaction]:
     """
     Get a transaction by its idempotency key.
     
     Args:
         db: Database session
+        user_id: Owner of the key (keys are unique per user)
         idempotency_key: The idempotency key
         
     Returns:
         The Transaction model instance, or None if not found
     """
     return db.query(Transaction).filter(
+        Transaction.user_id == user_id,
         Transaction.idempotency_key == idempotency_key
     ).first()
 
