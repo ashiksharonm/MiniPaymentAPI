@@ -73,7 +73,7 @@ This is a **learning/portfolio project** and does NOT process real payments.
 Not compliant with PCI-DSS or any banking regulations.
 
 ### Authentication
-Use the API key `demo-api-key-12345` in the `X-API-Key` header.
+Use your API key in the `X-API-Key` header.
     """,
     version=settings.APP_VERSION,
     lifespan=lifespan,

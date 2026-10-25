@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # Authentication (simple API key for demo purposes)
-    API_KEY: str = "demo-api-key-12345"
+    API_KEY: str
     
     # CORS (for development)
     ALLOWED_ORIGINS: list[str] = ["*"]
