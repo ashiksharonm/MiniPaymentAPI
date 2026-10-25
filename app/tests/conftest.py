@@ -1,6 +1,11 @@
 """
 Pytest configuration and fixtures.
 """
+import os
+
+# Settings require API_KEY; give the test run its own key before the app is imported.
+os.environ.setdefault("API_KEY", "test-api-key")
+
 import pytest
 from typing import Generator
 from fastapi.testclient import TestClient

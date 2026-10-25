@@ -10,7 +10,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.8
       - key: API_KEY
-        value: demo-api-key-12345
+        sync: false
       - key: DATABASE_URL
         value: sqlite:///./mini_payments.db
       - key: DEBUG

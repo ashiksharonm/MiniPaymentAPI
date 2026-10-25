@@ -14,7 +14,7 @@ A **production-style** Mini Payments API demonstrating backend engineering funda
 
 > **Note:** Free-tier Render instances spin down after inactivity. The first request may take ~30 seconds to wake up.
 >
-> **Demo API Key:** `demo-api-key-12345` (use in the `X-API-Key` header or via the Authorize button in Swagger UI)
+> **API Key:** set `API_KEY` on the server; send it in the `X-API-Key` header or via the Authorize button in Swagger UI.
 
 ## 🎯 Overview
 
@@ -123,11 +123,11 @@ mini-payments-api/
 
 All API endpoints (except health checks) require an API key.
 
-**Default API Key:** `demo-api-key-12345`
+**API Key:** the value of the `API_KEY` environment variable on the server.
 
 Include it in the request header:
 ```
-X-API-Key: demo-api-key-12345
+X-API-Key: <your-api-key>
 ```
 
 ## 📡 API Endpoints
